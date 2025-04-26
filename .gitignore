@@ -36,3 +36,8 @@ Thumbs.db
 *.controller
 *.prefab
 *.mat
+
+# Custom ignores
+Assets/Editor/
+Assets/Editor.meta
+scripts/
