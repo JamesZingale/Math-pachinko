@@ -37,7 +37,3 @@ Thumbs.db
 *.prefab
 *.mat
 
-# Custom ignores
-Assets/Editor/
-Assets/Editor.meta
-scripts/
