@@ -3,6 +3,9 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using TMPro;
 using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 
 public class MainMenuManager : MonoBehaviour
 {
@@ -23,7 +26,6 @@ public class MainMenuManager : MonoBehaviour
     public Button backFromLevelsButton;
     public GameObject levelButtonPrefab;
     public Transform levelButtonContainer;
-    public int numberOfLevels = 10;
     public Sprite lockedLevelSprite;
     public Sprite unlockedLevelSprite;
 
@@ -44,8 +46,13 @@ public class MainMenuManager : MonoBehaviour
     public TextMeshProUGUI gameTitle;
     public TextMeshProUGUI versionText;
 
+    private List<string> levelSceneNames = new List<string>();
+
     private void Start()
     {
+        // Find all level scenes in the Scenes folder
+        FindAllLevelScenes();
+
         // Set version text
         if (versionText != null)
             versionText.text = "v" + Application.version;
@@ -87,7 +94,7 @@ public class MainMenuManager : MonoBehaviour
         }
 
         // Generate level buttons if container and prefab are assigned
-        if (levelButtonContainer != null && levelButtonPrefab != null)
+        if (levelButtonContainer != null)
         {
             GenerateLevelButtons();
         }
@@ -101,10 +108,10 @@ public class MainMenuManager : MonoBehaviour
                 {
                     levelButtons[i].onClick.AddListener(() => LoadLevel(levelIndex));
                     
-                    // Set button interactable based on level unlock status
-                    levelButtons[i].interactable = IsLevelUnlocked(levelIndex);
+                    // All levels are now always unlocked
+                    levelButtons[i].interactable = true;
                     
-                    // Update button appearance based on locked/unlocked state
+                    // Update button appearance
                     UpdateLevelButtonAppearance(levelButtons[i], levelIndex);
                 }
             }
@@ -112,6 +119,53 @@ public class MainMenuManager : MonoBehaviour
 
         // Start with only main menu active
         ShowOnlyPanel(mainMenuPanel);
+    }
+
+    private void FindAllLevelScenes()
+    {
+        levelSceneNames.Clear();
+        
+        // Get all scene paths in build settings
+        for (int i = 0; i < SceneManager.sceneCountInBuildSettings; i++)
+        {
+            string scenePath = SceneUtility.GetScenePathByBuildIndex(i);
+            string sceneName = Path.GetFileNameWithoutExtension(scenePath);
+            
+            // Check if it's a level scene (starts with "Level")
+            if (sceneName.StartsWith("Level"))
+            {
+                levelSceneNames.Add(sceneName);
+            }
+        }
+
+        // If no level scenes found in build settings, search in the Scenes folder
+        if (levelSceneNames.Count == 0)
+        {
+            #if UNITY_EDITOR
+            // Get all scene files in the Scenes folder
+            string[] sceneGuids = UnityEditor.AssetDatabase.FindAssets("t:Scene", new[] { "Assets/Scenes" });
+            foreach (string guid in sceneGuids)
+            {
+                string scenePath = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                string sceneName = Path.GetFileNameWithoutExtension(scenePath);
+                
+                if (sceneName.StartsWith("Level"))
+                {
+                    levelSceneNames.Add(sceneName);
+                }
+            }
+            #endif
+        }
+        
+        // Sort the level names numerically
+        levelSceneNames = levelSceneNames.OrderBy(name => {
+            string numberPart = name.Substring("Level".Length);
+            if (int.TryParse(numberPart, out int number))
+                return number;
+            return 999; // Put non-numeric levels at the end
+        }).ToList();
+        
+        Debug.Log($"Found {levelSceneNames.Count} level scenes: {string.Join(", ", levelSceneNames)}");
     }
 
     private void GenerateLevelButtons()
@@ -122,28 +176,74 @@ public class MainMenuManager : MonoBehaviour
             Destroy(child.gameObject);
         }
 
-        // Create level buttons
-        for (int i = 0; i < numberOfLevels; i++)
+        // Log what levels we found to help with debugging
+        Debug.Log($"Creating buttons for {levelSceneNames.Count} levels: {string.Join(", ", levelSceneNames)}");
+
+        // Create level buttons based on found level scenes
+        for (int i = 0; i < levelSceneNames.Count; i++)
         {
-            int levelIndex = i + 1;
-            GameObject buttonObj = Instantiate(levelButtonPrefab, levelButtonContainer);
-            Button button = buttonObj.GetComponent<Button>();
+            string levelName = levelSceneNames[i];
+            int levelNumber = i + 1;
             
-            // Set level number text
-            TextMeshProUGUI buttonText = buttonObj.GetComponentInChildren<TextMeshProUGUI>();
-            if (buttonText != null)
-            {
-                buttonText.text = levelIndex.ToString();
-            }
+            // Create a completely new button instead of using the prefab
+            // This avoids any styling issues that might be in the prefab
+            GameObject buttonObj = new GameObject($"LevelButton_{levelNumber}");
+            buttonObj.transform.SetParent(levelButtonContainer, false);
             
-            // Set button action
-            button.onClick.AddListener(() => LoadLevel(levelIndex));
+            // Add required components
+            RectTransform rectTransform = buttonObj.AddComponent<RectTransform>();
+            rectTransform.sizeDelta = new Vector2(100, 100);
             
-            // Set button interactable based on level unlock status
-            button.interactable = IsLevelUnlocked(levelIndex);
+            // Add image component
+            Image buttonImage = buttonObj.AddComponent<Image>();
+            buttonImage.color = Color.white;
             
-            // Update button appearance
-            UpdateLevelButtonAppearance(button, levelIndex);
+            // Add button component
+            Button button = buttonObj.AddComponent<Button>();
+            
+            // Set button colors to ensure it's not greyed out
+            ColorBlock colors = button.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(0.9f, 0.9f, 0.9f);
+            colors.pressedColor = new Color(0.7f, 0.7f, 0.7f);
+            colors.selectedColor = Color.white;
+            colors.disabledColor = Color.white;
+            colors.colorMultiplier = 1f;
+            button.colors = colors;
+            
+            // Disable navigation to prevent orange selection bar
+            Navigation nav = button.navigation;
+            nav.mode = Navigation.Mode.None;
+            button.navigation = nav;
+            
+            // Create text object for the button
+            GameObject textObj = new GameObject("Text");
+            textObj.transform.SetParent(buttonObj.transform, false);
+            
+            RectTransform textRect = textObj.AddComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = Vector2.zero;
+            textRect.offsetMax = Vector2.zero;
+            
+            TextMeshProUGUI buttonText = textObj.AddComponent<TextMeshProUGUI>();
+            buttonText.text = levelNumber.ToString();
+            buttonText.fontSize = 36;
+            buttonText.alignment = TextAlignmentOptions.Center;
+            buttonText.color = Color.black;
+            
+            // IMPORTANT: Create a local copy of the level name to use in the lambda
+            // This prevents the closure from capturing the loop variable
+            string levelNameCopy = levelName;
+            
+            // Log what level this button will load
+            Debug.Log($"Button {levelNumber} will load scene: {levelNameCopy}");
+            
+            // Set button action with the copied variable
+            button.onClick.AddListener(() => {
+                Debug.Log($"Button clicked, loading scene: {levelNameCopy}");
+                LoadLevelByName(levelNameCopy);
+            });
         }
     }
 
@@ -151,31 +251,42 @@ public class MainMenuManager : MonoBehaviour
     {
         if (button == null) return;
         
+        // Ensure the button is fully enabled
+        button.interactable = true;
+        
+        // Update the button's visual state
         Image buttonImage = button.GetComponent<Image>();
         if (buttonImage != null)
         {
-            if (IsLevelUnlocked(levelIndex))
-            {
-                if (unlockedLevelSprite != null)
-                    buttonImage.sprite = unlockedLevelSprite;
-                buttonImage.color = Color.white;
-            }
-            else
-            {
-                if (lockedLevelSprite != null)
-                    buttonImage.sprite = lockedLevelSprite;
-                buttonImage.color = new Color(0.7f, 0.7f, 0.7f, 1f);
-            }
+            // Set the sprite if available
+            if (unlockedLevelSprite != null)
+                buttonImage.sprite = unlockedLevelSprite;
+            
+            // Ensure the color is white (fully visible)
+            buttonImage.color = Color.white;
+            
+            // Remove any orange highlight or selection state
+            ColorBlock colors = button.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(0.9f, 0.9f, 0.9f);
+            colors.pressedColor = new Color(0.7f, 0.7f, 0.7f);
+            colors.selectedColor = Color.white;
+            colors.disabledColor = Color.white; // This ensures even if somehow disabled, it looks normal
+            button.colors = colors;
+        }
+        
+        // Make sure any child text is visible
+        TextMeshProUGUI buttonText = button.GetComponentInChildren<TextMeshProUGUI>();
+        if (buttonText != null)
+        {
+            buttonText.color = Color.black; // Make text clearly visible
         }
     }
 
     private bool IsLevelUnlocked(int levelIndex)
     {
-        // Level 1 is always unlocked
-        if (levelIndex == 1) return true;
-        
-        // Check if previous level is completed
-        return PlayerPrefs.GetInt("Level" + (levelIndex - 1) + "Completed", 0) == 1;
+        // All levels are now always unlocked
+        return true;
     }
 
     public void ShowLevelSelection()
@@ -245,17 +356,69 @@ public class MainMenuManager : MonoBehaviour
 
     public void LoadLevel(int levelIndex)
     {
-        if (IsLevelUnlocked(levelIndex))
+        PlayButtonClickSound();
+        
+        // Check if we have this level in our list
+        if (levelIndex > 0 && levelIndex <= levelSceneNames.Count)
         {
-            PlayButtonClickSound();
-            // Show loading screen or transition effect here if desired
-            SceneManager.LoadScene("Level" + levelIndex);
+            string levelName = levelSceneNames[levelIndex - 1];
+            LoadLevelByName(levelName);
         }
         else
         {
-            // Play locked sound or show message
-            Debug.Log("Level " + levelIndex + " is locked!");
+            // Fallback to the old method
+            string levelSceneName = "Level" + levelIndex;
+            if (DoesSceneExist(levelSceneName))
+            {
+                SceneManager.LoadScene(levelSceneName);
+            }
+            else
+            {
+                Debug.LogWarning("Level " + levelIndex + " does not exist!");
+            }
         }
+    }
+    
+    public void LoadLevelByName(string levelName)
+    {
+        PlayButtonClickSound();
+        
+        Debug.Log($"Attempting to load level: {levelName}");
+        
+        if (DoesSceneExist(levelName))
+        {
+            Debug.Log($"Scene exists, loading: {levelName}");
+            SceneManager.LoadScene(levelName);
+        }
+        else
+        {
+            Debug.LogWarning($"Level {levelName} does not exist in build settings!");
+        }
+    }
+    
+    private bool DoesSceneExist(string sceneName)
+    {
+        // Check if the scene is in the build settings
+        for (int i = 0; i < SceneManager.sceneCountInBuildSettings; i++)
+        {
+            string scenePath = SceneUtility.GetScenePathByBuildIndex(i);
+            string sceneNameFromPath = Path.GetFileNameWithoutExtension(scenePath);
+            
+            if (sceneNameFromPath == sceneName)
+            {
+                return true;
+            }
+        }
+        
+        Debug.LogWarning($"Scene {sceneName} not found in build settings. Checking asset database...");
+        
+        // If we're in the editor, also check if the scene exists as an asset
+        #if UNITY_EDITOR
+        string[] sceneGuids = UnityEditor.AssetDatabase.FindAssets("t:Scene " + sceneName);
+        return sceneGuids.Length > 0;
+        #else
+        return false;
+        #endif
     }
 
     public void SetMusicVolume(float volume)
