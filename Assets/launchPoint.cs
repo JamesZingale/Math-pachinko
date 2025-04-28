@@ -1,17 +1,23 @@
-using UnityEngine;
-using TMPro; // <-- Needed for TextMeshPro
+﻿using UnityEngine;
+using TMPro;
+using UnityEngine.SceneManagement;
 
 public class BallShooter : MonoBehaviour
 {
     public static BallShooter Instance;
 
     public GameObject ballPrefab;
+    public GameObject levelCompletePanel;
     public Transform launchPoint;
     public float shootForce = 10f;
 
     public int firstNumber = 0;
     public int secondNumber = 0;
     public string currentOperator = "+";
+    public int totalScore = 0;
+    public int neededScore = 10;
+    public string nextlevel;
+    public TMP_Text scoreText;
 
     private bool waitingForSecondShot = false;
     private bool isBallShot = false;
@@ -21,12 +27,15 @@ public class BallShooter : MonoBehaviour
     public TMP_Text operatorText;
     public TMP_Text secondNumberText;
     public TMP_Text resultText;
+    public TMP_Text finalScoreText; // New!
 
     private void UpdateUI()
     {
         if (firstNumberText != null) firstNumberText.text = "First Number:" + firstNumber.ToString();
         if (operatorText != null) operatorText.text = "Operator:" + currentOperator;
         if (secondNumberText != null) secondNumberText.text = "Second Number:" + secondNumber.ToString();
+        if (scoreText != null) scoreText.text = "Score: " + totalScore.ToString() + "/" + neededScore;
+
     }
 
     private void Awake()
@@ -36,7 +45,7 @@ public class BallShooter : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetMouseButtonDown(0) && !isBallShot)
+        if (Input.GetKeyDown(KeyCode.Space) && !isBallShot)
         {
             ShootBall();
         }
@@ -117,14 +126,34 @@ public class BallShooter : MonoBehaviour
 
         Debug.Log($"Final Result: {firstNumber} {currentOperator} {secondNumber} = {result}");
 
-        // Update the UI before resetting
+        totalScore += result;
+
         UpdateUI();
 
-        // After calculation, reset for next round
         firstNumber = 0;
         secondNumber = 0;
         currentOperator = "+";
         waitingForSecondShot = false;
+
+        // 🛑 Check for level complete AFTER updating the score
+        if (totalScore >= neededScore)
+        {
+            LevelComplete();
+        }
+    }
+
+    private void LevelComplete()
+    {
+        if (levelCompletePanel != null)
+        {
+            if (finalScoreText != null)
+            {
+                finalScoreText.text = "Final Score: " + totalScore.ToString() + "/" + neededScore;
+            }
+
+            levelCompletePanel.SetActive(true);
+            Time.timeScale = 0f; // Pause the game
+        }
     }
 
     private Vector3 GetMouseDirection()
@@ -139,5 +168,16 @@ public class BallShooter : MonoBehaviour
         }
 
         return Vector3.zero;
+    }
+
+    public void LoadNextLevel()
+    {
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(nextlevel);
+    }
+    public void ReturnToMenu()
+    {
+        Time.timeScale = 1f;
+        SceneManager.LoadScene("MainMenu");
     }
 }
